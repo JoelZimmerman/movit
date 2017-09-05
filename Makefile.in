@@ -1,0 +1,206 @@
+GTEST_DIR ?= /usr/src/gtest
+
+# This will be upgraded for each release, although not necessarily for every git commit.
+# See http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
+# for the rules as of how this is changed. This does not really mean that Movit will
+# strive towards having a rock-stable ABI, but at least the soversion will increase
+# whenever it breaks, so that you will not have silent failures, and distribution package
+# management can run its course.
+movit_ltversion = 7:0:0
+movit_version = 1.5.2
+
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+includedir = @includedir@
+libdir = @libdir@
+datarootdir = @datarootdir@
+datadir = @datadir@
+top_builddir = @top_builddir@
+with_demo_app = @with_demo_app@
+with_SDL2 = @with_SDL2@
+with_coverage = @with_coverage@
+
+CC=@CC@
+CXX=@CXX@
+CXXFLAGS=-Wall @CXXFLAGS@ -fvisibility-inlines-hidden -I$(GTEST_DIR)/include @SDL2_CFLAGS@ @SDL_CFLAGS@ @Eigen3_CFLAGS@ @epoxy_CFLAGS@ @FFTW3_CFLAGS@
+ifeq ($(with_SDL2),yes)
+CXXFLAGS += -DHAVE_SDL2
+endif
+LDFLAGS=@LDFLAGS@
+LDLIBS=@epoxy_LIBS@ @FFTW3_LIBS@ -lpthread
+TEST_LDLIBS=@epoxy_LIBS@ @SDL2_LIBS@ @SDL_LIBS@ -lpthread
+DEMO_LDLIBS=@SDL2_image_LIBS@ @SDL_image_LIBS@ -lrt -lpthread @libpng_LIBS@ @FFTW3_LIBS@
+SHELL=@SHELL@
+LIBTOOL=@LIBTOOL@ --tag=CXX
+RANLIB=ranlib
+INSTALL=install
+MKDIR=mkdir
+
+ifeq ($(with_coverage),yes)
+CXXFLAGS += -fprofile-arcs -ftest-coverage --coverage
+LDFLAGS += -fprofile-arcs -ftest-coverage
+LDLIBS += -lgcov
+endif
+
+DEMO_OBJS=demo.o widgets.o
+
+# Inputs.
+TESTED_INPUTS = flat_input
+TESTED_INPUTS += ycbcr_input
+TESTED_INPUTS += ycbcr_422interleaved_input
+
+INPUTS = $(TESTED_INPUTS) $(UNTESTED_INPUTS)
+
+# Effects.
+TESTED_EFFECTS = lift_gamma_gain_effect
+TESTED_EFFECTS += white_balance_effect
+TESTED_EFFECTS += gamma_expansion_effect
+TESTED_EFFECTS += gamma_compression_effect
+TESTED_EFFECTS += colorspace_conversion_effect
+TESTED_EFFECTS += alpha_multiplication_effect
+TESTED_EFFECTS += alpha_division_effect
+TESTED_EFFECTS += saturation_effect
+TESTED_EFFECTS += blur_effect
+TESTED_EFFECTS += diffusion_effect
+TESTED_EFFECTS += glow_effect
+TESTED_EFFECTS += unsharp_mask_effect
+TESTED_EFFECTS += mix_effect
+TESTED_EFFECTS += overlay_effect
+TESTED_EFFECTS += padding_effect
+TESTED_EFFECTS += resample_effect
+TESTED_EFFECTS += dither_effect
+TESTED_EFFECTS += deconvolution_sharpen_effect
+TESTED_EFFECTS += fft_pass_effect
+TESTED_EFFECTS += vignette_effect
+TESTED_EFFECTS += slice_effect
+TESTED_EFFECTS += complex_modulate_effect
+TESTED_EFFECTS += luma_mix_effect
+TESTED_EFFECTS += fft_convolution_effect
+TESTED_EFFECTS += ycbcr_conversion_effect
+TESTED_EFFECTS += deinterlace_effect
+
+UNTESTED_EFFECTS = sandbox_effect
+UNTESTED_EFFECTS += mirror_effect
+UNTESTED_EFFECTS += resize_effect
+UNTESTED_EFFECTS += multiply_effect
+UNTESTED_EFFECTS += fft_input
+
+EFFECTS = $(TESTED_EFFECTS) $(UNTESTED_EFFECTS)
+
+# Unit tests.
+TESTS=effect_chain_test fp16_test $(TESTED_INPUTS:=_test) $(TESTED_EFFECTS:=_test)
+
+LIB_OBJS=effect_util.o util.o effect.o effect_chain.o init.o resource_pool.o ycbcr.o $(INPUTS:=.o) $(EFFECTS:=.o)
+
+# Default target:
+all: libmovit.la $(TESTS)
+
+ifeq ($(with_demo_app),yes)
+all: demo
+endif
+
+# Google Test and other test library functions.
+OWN_TEST_OBJS = gtest_sdl_main.o test_util.o
+TEST_OBJS = gtest-all.o $(OWN_TEST_OBJS)
+
+gtest-all.o: $(GTEST_DIR)/src/gtest-all.cc
+	$(CXX) -MMD $(CPPFLAGS) -I$(GTEST_DIR) $(CXXFLAGS) -c $< -o $@
+gtest_sdl_main.o: gtest_sdl_main.cpp
+	$(CXX) -MMD $(CPPFLAGS) -I$(GTEST_DIR) $(CXXFLAGS) -c $< -o $@
+
+# Unit tests.
+$(TESTS): %: %.o $(TEST_OBJS) libmovit.la
+	$(LIBTOOL) --mode=link $(CXX) $(LDFLAGS) -o $@ $^ $(TEST_LDLIBS)
+
+OWN_OBJS=$(DEMO_OBJS) $(LIB_OBJS) $(OWN_TEST_OBJS) $(TESTS:=.o)
+OBJS=$(DEMO_OBJS) $(LIB_OBJS) $(TEST_OBJS) $(TESTS:=.o)
+
+# A small demo program.
+demo: libmovit.la $(DEMO_OBJS)
+	$(LIBTOOL) --mode=link $(CXX) $(LDFLAGS) -o demo $(DEMO_OBJS) libmovit.la $(LDLIBS) $(DEMO_LDLIBS)
+
+# The library itself.
+libmovit.la: $(LIB_OBJS:.o=.lo)
+	$(LIBTOOL) --mode=link $(CXX) $(LDFLAGS) -rpath $(libdir) -version-info $(movit_ltversion) -o $@ $^ $(LDLIBS)
+
+%.lo: %.cpp
+	$(LIBTOOL) --mode=compile $(CXX) -MMD -MP $(CPPFLAGS) $(CXXFLAGS) -o $@ -c $<
+	[ ! -r $(@:.lo=.d) ] || sed 's/\.o:/\.lo:/' < $(@:.lo=.d) > $(@:.lo=.ld)
+	[ ! -r .libs/$(@:.lo=.d) ] || sed 's/\.o:/\.lo:/' < .libs/$(@:.lo=.d) > .libs/$(@:.lo=.ld)
+%.o: %.cpp
+	$(CXX) -MMD -MP $(CPPFLAGS) $(CXXFLAGS) -o $@ -c $<
+
+DEPS=$(OBJS:.o=.d) $(OBJS:.o=.ld)
+-include $(DEPS)
+
+clean:
+	$(LIBTOOL) --mode=clean $(RM) demo $(TESTS) libmovit.la $(OBJS) $(OBJS:.o=.lo)
+	$(RM) $(OBJS:.o=.gcno) $(OBJS:.o=.gcda) $(DEPS) step*.dot chain*.frag
+	$(RM) -r movit.info coverage/ .libs/
+
+distclean: clean
+	$(RM) Makefile movit.pc config.status config.log
+
+check: $(TESTS)
+	FAILED_TESTS=""; \
+	for TEST in $(TESTS); do \
+		./$$TEST || FAILED_TESTS="$$TEST $$FAILED_TESTS"; \
+	done; \
+	if [ "$$FAILED_TESTS" ]; then \
+		echo Failed tests: $$FAILED_TESTS; \
+		exit 1; \
+	fi
+
+ifeq ($(with_coverage),yes)
+coverage: check
+	lcov -d . -c -o movit.info
+	lcov --remove movit.info '*_test.cpp' 'test_util.*' 'sandbox_effect.*' widgets.cpp -o movit.info
+	genhtml -o coverage movit.info
+else
+coverage:
+	@echo You need to compile with --enable-coverage to use this target.
+	@exit 1
+endif
+
+HDRS = effect_chain.h effect_util.h effect.h input.h image_format.h init.h util.h defs.h resource_pool.h fp16.h ycbcr.h version.h
+HDRS += $(INPUTS:=.h)
+HDRS += $(EFFECTS:=.h)
+
+SHADERS = vs.vert vs.130.vert vs.150.vert vs.300es.vert
+SHADERS += header.130.frag header.150.frag header.300es.frag
+SHADERS += footer.frag identity.frag
+SHADERS += texture1d.130.frag texture1d.150.frag texture1d.300es.frag
+SHADERS += $(INPUTS:=.frag)
+SHADERS += $(EFFECTS:=.frag)
+SHADERS += highlight_cutoff_effect.frag
+SHADERS += overlay_matte_effect.frag
+
+# These purposefully do not exist.
+MISSING_SHADERS = diffusion_effect.frag glow_effect.frag unsharp_mask_effect.frag resize_effect.frag
+MISSING_SHADERS += fft_convolution_effect.frag fft_input.frag
+SHADERS := $(filter-out $(MISSING_SHADERS),$(SHADERS))
+
+install: libmovit.la
+	$(MKDIR) -p $(DESTDIR)$(libdir)/
+	$(LIBTOOL) --mode=install $(INSTALL) -m 0644 libmovit.la $(DESTDIR)$(libdir)/
+	$(MKDIR) -p $(DESTDIR)$(includedir)/movit/
+	$(INSTALL) -m 0644 $(HDRS) $(DESTDIR)$(includedir)/movit/
+	$(MKDIR) -p $(DESTDIR)$(datadir)/movit/
+	$(INSTALL) -m 0644 $(SHADERS) $(DESTDIR)$(datadir)/movit/
+	$(MKDIR) -p $(DESTDIR)$(libdir)/pkgconfig/
+	$(INSTALL) -m 644 movit.pc $(DESTDIR)$(libdir)/pkgconfig/
+
+DISTDIR=movit-$(movit_version)
+OTHER_DIST_FILES=add.frag autogen.sh blue.frag configure.ac d65.h identity.frag invert_effect.frag Makefile.in mipmap_needing_effect.frag movit.pc.in README NEWS test_util.h widgets.h
+
+dist:
+	$(MKDIR) $(DISTDIR)
+	cp $(OWN_OBJS:.o=.cpp) $(DISTDIR)/
+	cp $(HDRS) $(DISTDIR)/
+	cp $(SHADERS) $(DISTDIR)/
+	cp $(OTHER_DIST_FILES) $(DISTDIR)/
+	( cd $(DISTDIR) && aclocal && libtoolize --install --copy && autoconf && $(RM) -r autom4te.cache/ )
+	tar zcvvf ../$(DISTDIR).tar.gz $(DISTDIR)
+	$(RM) -r $(DISTDIR)
+
+.PHONY: coverage clean distclean check all install dist
