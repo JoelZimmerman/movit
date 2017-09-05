@@ -1,0 +1,207 @@
+Movit 1.5.2, July 5th, 2017
+
+  - The texture generation for ResampleEffect (when the size is changed)
+    now uses less CPU.
+
+  - Work around an NVIDIA driver threading bug by aggressively caching VAOs.
+
+
+Movit 1.5.1, May 29th, 2017
+
+  - Allow YCbCrInput to change input format after finalize.
+
+  - Some minor YCbCrInput bugfixes.
+
+
+Movit 1.5.0, March 21st, 2017
+
+  - Support interleaved Y'CbCr input (4:4:4 in a single texture).
+
+  - Support 10-bit and 12-bit Y'CbCr, both for input and output. For planar,
+    these are supported packed in 16-bit ints; for interleaved, 10:10:10:2 is
+    supported. (Efficient conversion to and from v210, ie. 10-bit 4:2:2,
+    is possible using compute shaders, but Movit does not include support
+    for them at the current point.) Note that this now means the num_levels
+    flag in YCbCrFormat actually matters, although 0 will be interpreted
+    as 256 (8-bit) for the benefit of older applications.
+
+  - Limited support for having multiple Y'CbCr outputs from a chain.
+
+  - Allow changing the Y'CbCr output coefficients runtime, ie., after finalize.
+
+  - Fix an issue where the last pass would have been rendered with the sRGB
+    flag set, which confused Qt applications running in certain NVIDIA
+    configurations.
+
+
+Movit 1.4.0, November 5th, 2016
+
+  - Allow setting the intermediate format for chains, instead of hardcoding
+    it at 16-bit RGBA; advanced users can use this to e.g. ask for 8-bit
+    sRGB intermediates, reducing the amount of memory bandwidth needed
+    at the cost of reduced precision. Whether this is a good tradeoff or not
+    depends on the exact chain and your requirements.
+
+  - Fix an issue where a (cached) shader program could be used from multiple
+    threads at a time, causing the uniforms to contain unpredictable values.
+
+  - Make the error printed on check_error() slightly friendlier: Include the
+    enum if possible, and print it to stderr instead of stdout.
+
+
+Movit 1.3.2, February 23rd, 2016
+
+  - Fix an issue with initialization in certain locales. Patch from
+    Jean-Baptiste Mardelle.
+
+
+Movit 1.3.1, February 15th, 2016
+
+  - Fix an issue where certain effect chains (particularly involving
+    out-of-tree effects that return only a constant color) could cause
+    texture coordinates not to be set properly. (The new code probably
+    also has slightly lower OpenGL driver overhead.) Reported by
+    Christophe Thommeret.
+
+
+Movit 1.3.0, January 31st, 2016
+
+  - Movit now requires GLSL 1.30 (so a driver from 2008 or later);
+    before, it claimed to support 1.10, but actually used 1.30 features.
+    Note that some OpenGL drivers, in particular on OS X, only supports
+    GLSL 1.30 (actually, 1.50) if you have an OpenGL core context.
+
+  - Add a deinterlacer, based on YADIF.
+
+  - Allow parallel output to RGBA and Y'CbCr textures at the same time.
+
+  - Make FlatInput and YCbCrInput support taking in external OpenGL
+    textures. Also allow them to change width/height after instantiation.
+
+  - Various compatibility and performance fixes. In particular,
+    fp16 conversion on older (non-Haswell) CPUs is much faster, due to
+    new conversion code by Fabian Giesen.
+
+
+Movit 1.2.0, September 24th, 2015
+
+  - Movit now ships a version.h with a #define MOVIT_VERSION that
+    increases on every API change, including in git. (The number
+    itself carries no semantic meaning beyond this.) Movit 1.2.0
+    is not API or ABI compatible with 1.1.x, so there has been a
+    soname bump to libmovit.so.3.
+
+  - More flexible Y'CbCr input; in particular, a special input
+    for 4:2:2 interleaved data (UYVY), and support for semi-planar
+    input (Cb and Cr in the same texture, like in NV12). Note that
+    you should now also set the new “num_levels” member of
+    YCbYCbCrFormat to 256 (signifying 8-bit input), although
+    it is not used yet; this is a stepping stone towards supporting
+    10- and 12-bit Y'CbCr.
+
+  - Basic support for Y'CbCr _output_. Currently only 8-bit,
+    and only 4:4:4 (ie., you'll need to subsample yourself
+    afterwards). It is possible to split the output into multiple
+    textures, though, if you want a luma/chroma split (NV12-like)
+    or full planar.
+
+  - Support top-left origin for output. This is only really useful
+    if you are rendering directly into some memory area with top-left
+    origin; most users will get the expected behavior by using
+    bottom-left as before.
+
+  - Rework uniform handling for less OpenGL overhead. Note that
+    this means your effects now need to register uniforms in the
+    C++ code instead of declaring them in the .frag file.
+
+  - Make the PaddingEffect border subpixel-aware, and also support
+    an arbitrary (subpixel) border offset. This means that you can
+    compose PaddingEffect with an integral left/top offset
+    (use the new IntegralPaddingEffect for potentially more speed)
+    and ResampleEffect with a subpixel left/top offset (and zoom to
+    compensate) to get Lanczos interpolation for the pixels and a
+    simple bilinear interpolation for the border itself.
+
+  - Fix a bug that could cause very bad filter weights in
+    ResampleEffect.
+
+  - Various performance improvements, in particular with regards to
+    CPU usage in ResampleEffect.
+
+
+Movit 1.1.3, March 29th, 2015
+
+  - Fix accuracy issues in ResampleEffect, particularly when
+    zooming. Note that this might cost a few percent performance.
+    Reported by Christophe Thommeret.
+
+  - Make the number of BlurEffect taps configurable.
+    Based on patch by Christophe Thommeret.
+
+  - Multiple other bugfixes, some courtesy Dan Dennedy and
+    Christophe Thommeret. In particular, thread-safety fixes
+    related to locales and chain finalization.
+
+
+Movit 1.1.2, August 12th, 2014
+
+  - Performance bugfix: Fix texture freelist behavior so that it's
+    LRU instead of the exact opposite. Patch by Christophe Thommeret.
+
+  - Performance bugfix: Correct the number of blur taps read in the
+    blur filter (it was reading about twice as many as it should).
+    Also found by Christophe Thommeret.
+
+
+Movit 1.1.1, April 12th, 2014
+
+ - Fix an issue that could cause assertion failure in ResourcePool
+   when FBOs are reused, especially with NVIDIA's drivers.
+
+
+Movit 1.1, April 10th, 2014
+
+ - NOTE: Movit now uses libepoxy rather than GLEW. This is needed because
+   of core context and GLES3 support (see below). Movit 1.1 should be
+   generally API-compatible with 1.0.3 (with the exception of the next
+   point), but is not ABI-compatible, so there has been a soname bump
+   to libmovit.so.2.
+
+ - NOTE: The rules for using an EffectChain or ResourcePool in multiple
+   OpenGL contexts or threads have changed somewhat; see the comments in
+   resource_pool.h.
+
+ - Movit will now work in OpenGL core contexts, and on GLES 3.0 or newer.
+   (GLES2 devices are not supported.) This also holds for all unit tests,
+   provided that you use SDL2 and not SDL1 (because SDL2 is needed to set
+   up such contexts). Note that the included demo application still requires
+   a classic OpenGL context.
+
+ - ResampleEffect can now do sub-pixel translate and/or zoom.
+
+ - LumaMixEffect now has an “invert” flag, as a convenience to e.g. change
+   a left-to-right wipe into a right-to-left one.
+
+ - Significant reduction in driver overhead, especially on NVIDIA drivers.
+
+ - Various smaller bugfixes and performance improvements.
+
+
+Movit 1.0.3, March 16th, 2014
+
+ - Yet more build system tweaks mainly related to distribution packaging.
+
+
+Movit 1.0.2, March 16th, 2014
+
+ - Make a few tweaks to “make install”, to make distributions' lives easier.
+
+
+Movit 1.0.1, March 16th, 2014
+
+ - Fix so that shared libraries are built.
+
+
+Movit 1.0, March 16th, 2014
+
+ - Initial release.
